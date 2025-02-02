@@ -31,11 +31,11 @@ These creation steps are simple, just follow what Microsoft Azure asks for. So w
 ```json
 
 {
-  "title" : <Movie Title>,
+  "id" : <Database ID>,
+  "title" : <Video Title>,
+  "year" : <Movie Year>,
   "video" : <Video Path>,
-  "thub" : <Template Path>,
-  "synopsis" : <Movie Synopsis>,
-  "genre" : <Movie genre>
+  "thub" : <Template Image Path>
 }
 
 ```
@@ -155,6 +155,87 @@ For the application to have connectivity with the database, it is necessary to a
 }
 
 ```
+
+
+Before we delve into the code that will be used to perform the main task of this function, we must create the file that will dictate the format of a record in MovieRequest.cs in the format that was previously shown.
+
+```csharp
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace fnPostDatabase
+{
+    internal class MovieRequest
+    {
+        public string id { get { return Guid.NewGuid().ToString(); } }
+        public string title { get; set; }
+        public string year { get; set; }
+        public string video { get; set; }
+        public string thub { get; set; }
+    }
+}
+
+
+```
+
+
+Now that we have made all the configuration changes, we can move on to the main code of the function.
+
+```csharp
+
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Logging;
+using System.IO;
+using System.Threading.Tasks;
+using Newtonsoft.Json;
+
+namespace fnPostDatabase
+{
+    public class Function1
+    {
+        private readonly ILogger<Function1> _logger;
+
+        public Function1(ILogger<Function1> logger)
+        {
+            _logger = logger;
+        }
+
+        [Function("movie")]
+        [CosmosDBOutput("%DatabaseName%", "%ContainerName%", Connection = "CosmoDBConnection", CreateIfNotExists = true, PartionKey = "id")]
+        public async Task<object> Run([HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequest req)
+        {
+            _logger.LogInformation("C# HTTP trigger function processed a request.");
+
+            MovieRequest movie = null;
+
+            var content = await new StreamReader(req.Body).ReadToEndAsync();
+
+            try
+            {
+                movie = JsonConvert.DeserializeObject<MovieRequest>(content);
+            }
+            catch (Exception ex)
+            {
+                return new BadRequestObjectResult("Erro ao desserializar o objeto: " + ex.Message);
+            }
+
+            return JsonConvert.SerializeObject(movie);
+        }
+    }
+}
+
+
+```
+
+
+Remembering that there is a need to create a container in cosmosDB and the partition keys so that errors do not occur when saving records.
+
 ### Create an Azure Function to filter records in CosmosDB:
 
 
