@@ -2,7 +2,7 @@
 
 This project aims to create an movie catalog manager with Azure Function and CosmosDB. We'll show step by step of this process.
 
-## ⚙️ Steps:
+## ⚙️ Implementation Steps:
 
 
 These are the steps we will follow to structure this video catalog manager. Next, we will break down each of these steps in detail.
@@ -31,11 +31,11 @@ These creation steps are simple, just follow what Microsoft Azure asks for. So w
 ```json
 
 {
-  "title" : "<Movie Title>",
-  "video" : "<Video Path>/*.mp4",
-  "thub" : "<Template Path>/*.png",
-  "synopsis" : "<Movie Synopsis>",
-  "genre" : "<Movie genre>"
+  "title" : <Movie Title>,
+  "video" : <Video Path>,
+  "thub" : <Template Path>,
+  "synopsis" : <Movie Synopsis>,
+  "genre" : <Movie genre>
 }
 
 ```
@@ -44,9 +44,117 @@ These creation steps are simple, just follow what Microsoft Azure asks for. So w
 ### Create an Azure Function to save files to the storage account:
 
 
+Before going into the details of the code behind the function to save files to the storage account, we need to make a small modification to the configuration file of this function. The following modification must be in the Program.cs folder so that the function is able to accept large files (in this case 100 MB), since videos tend to be larger in size.
+
+```csharp
+
+builder.Services.Configure<KestrelServerOptions>(options =>
+{
+    options.Limits.MaxRequestBodySize = 104857600; // 1024 * 1024 * 100, // 100 MB
+});
+
+
+```
+
+Remembering that we also need to add the connection string key to the function settings, so that it can communicate with the storage account. We also have to create two containers in the storage account, one for the videos and one for the template images.
+
+
+Now we can show the code used for the main functionality of the function.
+
+```csharp
+
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Logging;
+using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
+using System;
+using System.Threading.Tasks;
+
+namespace fnPostDataStorage
+{
+    public class Function1
+    {
+        private readonly ILogger<Function1> _logger;
+
+        public Function1(ILogger<Function1> logger)
+        {
+            _logger = logger;
+        }
+
+        [Function("dataStorage")]
+        public async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequest req)
+        {
+            _logger.LogInformation("Processando a Imagem no Storage");
+
+            try
+            {
+                if (!req.Headers.TryGetValue("file-type", out var fileTypeHeader))
+                {
+                    return new BadRequestObjectResult("O cabeçalho 'file-type' é obrigatório");
+                }
+
+                var fileType = fileTypeHeader.ToString();
+                var form = await req.ReadFormAsync();
+                var file = form.Files["file"];
+
+                if (file == null || file.Length == 0)
+                {
+                    return new BadRequestObjectResult("O arquivo não foi enviado");
+                }
+
+                string connectionString = Environment.GetEnvironmentVariable("AzureWebJobsStorage");
+                string containerName = fileType;
+
+                BlobContainerClient containerClient = new BlobContainerClient(connectionString, containerName);
+                await containerClient.CreateIfNotExistsAsync();
+                await containerClient.SetAccessPolicyAsync(PublicAccessType.BlobContainer);
+
+                string blobName = file.FileName;
+                var blob = containerClient.GetBlobClient(blobName);
+
+                using (var stream = file.OpenReadStream())
+                {
+                    await blob.UploadAsync(stream, true);
+                }
+
+                _logger.LogInformation($"Arquivo {file.FileName} armazenado com sucesso");
+
+                return new OkObjectResult(new
+                {
+                    Message = "Arquivo armazenado com sucesso",
+                    BlobUri = blob.Uri
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Erro ao processar a requisição: {ex.Message}");
+                return new StatusCodeResult(StatusCodes.Status500InternalServerError);
+            }
+        }
+    }
+}
+
+```
+
+
 ### Create an Azure Function to save to CosmosDB:
 
 
+Now that we have the function that saves the images and videos in the storage account, we need a function to save this record in CosmosDB.
+
+For the application to have connectivity with the database, it is necessary to add some parameters in the local configuration file: localsettings.json
+
+```json
+
+{
+  "CosmosDBConnection" : <Primary Connection String>,
+  "DatabaseName" : <Data Base Name>,
+  "ContainerName" : <Container Name>
+}
+
+```
 ### Create an Azure Function to filter records in CosmosDB:
 
 
