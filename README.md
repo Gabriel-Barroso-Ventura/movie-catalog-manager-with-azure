@@ -236,7 +236,131 @@ namespace fnPostDatabase
 
 Remembering that there is a need to create a container in cosmosDB and the partition keys so that errors do not occur when saving records.
 
+
 ### Create an Azure Function to filter records in CosmosDB:
+
+
+Now that we have saved the data to the database, we need to create the functions that consume this data. Let's start with the function that filters the records from CosmosDB.
+
+Before we present the main code of the function, let's create the MovieResulta class that represents the search result.
+
+```csharp
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace fnGetMovieDetail
+{
+    internal class MovieResult
+    {
+        public string id { get; set; }
+        public string title { get; set; }
+        public string year { get; set; }
+        public string video { get; set; }
+        public string thumb { get; set; }
+    }
+}
+
+```
+
+
+Remembering that there is a need to add the cosmosDB connectivity key to the local configuration file (localsettings.json), this step has already been demonstrated previously.
+
+In order to be able to run local tests, we also need to add CORS in the same local configuration file.
+
+```json
+
+"Host" : {
+  "CORS" : "*"
+}
+
+```
+
+
+To avoid having to perform repetitive instance processes in cosmosDB, we need to make a change to the Program.cs configuration file. We can see the contents of the file after the following modifications.
+
+```csharp
+
+using Microsoft.Azure.Cosmos;
+using Microsoft.Azure.Functions.Worker.Builder;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+
+var builder = FunctionsApplication.CreateBuilder(args);
+
+builder.ConfigureFunctionsWebApplication();
+
+// Application Insights isn't enabled by default. See https://aka.ms/AAt8mw4.
+// builder.Services
+//     .AddApplicationInsightsTelemetryWorkerService()
+//     .ConfigureFunctionsApplicationInsights();
+
+builder.Services.AddSingleton(s =>
+{
+    string connectionString = Environment.GetEnvironmentVariable("CosmoDBConnection");
+    return new CosmosClient(connectionString);
+});
+
+builder.Build().Run();
+
+
+```
+
+
+Now that all the necessary configurations have been made, we can present the main code of the Azure function for filtering CosmosDB records.
+
+```csharp
+
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Logging;
+
+namespace fnGetMovieDetail
+{
+    public class Function1
+    {
+        private readonly ILogger<Function1> _logger;
+        private readonly CosmosClient _cosmosClient;
+
+        public Function1(ILogger<Function1> logger, CosmosClient cosmosClient)
+        {
+            _logger = logger;
+            _cosmosClient = cosmosClient;
+        }
+
+        [Function("detail")]
+        public async Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Function, "get")] HttpRequestData req)
+        {
+            _logger.LogInformation("C# HTTP trigger function processed a request.");
+            var container = _cosmosClient.GetContainer("%DatabaseName%", "%ContainerName%");
+            var id = req.Query["id"];
+            var query = "SELECT * FROM c WHERE c.id = @id";
+            var queryDefinition = new QueryDefinition(query).WithParameter("@id", id);
+            var result = container.GetItemQueryIterator<MovieResult>(queryDefinition);
+            var results = new List<MovieResult>();
+            
+            while (result.HasMoreResults)
+            {
+                foreach (var item in await result.ReadNextAsync())
+                {
+                    results.Add(item);
+                }
+            }
+            
+            var responseMessage = req.CreateResponse(System.Net.HttpStatusCode.OK);
+            await responseMessage.WriteAsJsonAsync(results.FirstOrDefault());
+            
+            return responseMessage;
+        }
+    }
+}
+
+
+```
 
 
 ### Create an Azure Function to list records in CosmosDB:
