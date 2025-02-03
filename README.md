@@ -2,6 +2,7 @@
 
 This project aims to create an movie catalog manager with Azure Function and CosmosDB. We'll show step by step of this process.
 
+
 ## ⚙️ Implementation Steps:
 
 
@@ -364,4 +365,61 @@ namespace fnGetMovieDetail
 
 
 ### Create an Azure Function to list records in CosmosDB:
+
+In the same way as in the previous item, it is necessary to create a MovieResults class and make the modifications in Program.cs to automate the instantiation in CosmosDB. Remember that there is a need to recreate these files even though they have already been created previously for another microservice, since these microservices are independent and we must maintain the minimum dependency between them.
+
+Now that all the necessary configurations are done, we can present the main code of the Azure Function to List CosmosDB Records.
+
+```csharp
+
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Logging;
+
+namespace fnGetMovieDetail
+{
+    public class Function1
+    {
+        private readonly ILogger<Function1> _logger;
+        private readonly CosmosClient _cosmosClient;
+
+        public Function1(ILogger<Function1> logger, CosmosClient cosmosClient)
+        {
+            _logger = logger;
+            _cosmosClient = cosmosClient;
+        }
+
+        [Function("all")]
+        public async Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Function, "get")] HttpRequestData req)
+        {
+            _logger.LogInformation("C# HTTP trigger function processed a request.");
+            var container = _cosmosClient.GetContainer("DioFlixDB", "movies");
+            var query = "SELECT * FROM c";
+            var queryDefinition = new QueryDefinition(query);
+            var result = container.GetItemQueryIterator<MovieResult>(queryDefinition);
+            var results = new List<MovieResult>();
+            
+            while (result.HasMoreResults)
+            {
+                foreach (var item in await result.ReadNextAsync())
+                {
+                    results.Add(item);
+                }
+            }
+            
+            var responseMessage = req.CreateResponse(System.Net.HttpStatusCode.OK);
+            await responseMessage.WriteAsJsonAsync(results);
+            
+            return responseMessage;
+        }
+    }
+}
+
+
+```
+
+## ✳️ Final Considerations
+
+With the creation and implementation of all these microservices, the last step would be to create a front end to visualize how they work. This step was not implemented, but it would be possible to perform this test with AI-generated code.
 
